@@ -9,16 +9,14 @@ import {
 } from '@nestjs/common';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 
-import { PRODUCT_SERVICE } from 'src/config';
+import { NATS_SERVICE } from 'src/config';
 import { ChangeOrderStatusDto, CreateOrderDto, FilterOrderDto } from './dto';
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
   private readonly logger = new Logger(OrdersService.name);
 
-  constructor(
-    @Inject(PRODUCT_SERVICE) private readonly productClient: ClientProxy,
-  ) {
+  constructor(@Inject(NATS_SERVICE) private readonly client: ClientProxy) {
     super();
   }
 
@@ -30,7 +28,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
   private async validateProducts(productIds: number[]): Promise<any[]> {
     try {
       const validProducts = await firstValueFrom(
-        this.productClient.send({ cmd: 'validate_products' }, productIds),
+        this.client.send({ cmd: 'validate_products' }, productIds),
       );
       return validProducts;
     } catch (error) {
