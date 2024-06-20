@@ -1,3 +1,4 @@
+import { Order } from '@prisma/client';
 import { Controller, ParseUUIDPipe } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 
@@ -9,22 +10,27 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @MessagePattern({ cmd: 'create_order' })
-  create(@Payload() createOrderDto: CreateOrderDto) {
-    return this.ordersService.create(createOrderDto);
+  async create(@Payload() createOrderDto: CreateOrderDto): Promise<Order> {
+    return await this.ordersService.create(createOrderDto);
   }
 
   @MessagePattern({ cmd: 'find_all_orders' })
-  findAll(@Payload() filterOrderDto: FilterOrderDto) {
-    return this.ordersService.findAll(filterOrderDto);
+  async findAll(@Payload() filterOrderDto: FilterOrderDto): Promise<{
+    data: Order[];
+    meta: FilterOrderDto;
+  }> {
+    return await this.ordersService.findAll(filterOrderDto);
   }
 
   @MessagePattern({ cmd: 'find_one_order' })
-  findOne(@Payload('id', ParseUUIDPipe) id: string) {
-    return this.ordersService.findOne(id);
+  async findOne(@Payload('id', ParseUUIDPipe) id: string): Promise<Order> {
+    return await this.ordersService.findOneDetail(id);
   }
 
   @MessagePattern({ cmd: 'change_order_status' })
-  changeOrderStatus(@Payload() changeOrderStatusDto: ChangeOrderStatusDto) {
-    return this.ordersService.changeOrderStatus(changeOrderStatusDto);
+  async changeOrderStatus(
+    @Payload() changeOrderStatusDto: ChangeOrderStatusDto,
+  ): Promise<Order> {
+    return await this.ordersService.changeOrderStatus(changeOrderStatusDto);
   }
 }
