@@ -1,5 +1,5 @@
 import { firstValueFrom } from 'rxjs';
-import { Order, PrismaClient } from '@prisma/client';
+import { Order, OrderStatus, PrismaClient } from '@prisma/client';
 import {
   HttpStatus,
   Inject,
@@ -10,7 +10,15 @@ import {
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 
 import { NATS_SERVICE } from 'src/config';
-import { ChangeOrderStatusDto, CreateOrderDto, FilterOrderDto } from './dto';
+import {
+  ChangeOrderStatusDto,
+  CreateOrderDto,
+  CreateOrderPresenter,
+  FilterOrderDto,
+  PaymentSessionDto,
+  PaymentSuccessDto,
+  ProductDto,
+} from './dto';
 
 @Injectable()
 export class OrdersService extends PrismaClient implements OnModuleInit {
@@ -39,11 +47,13 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
     }
   }
 
-  async create(createOrderDto: CreateOrderDto): Promise<Order> {
+  async createOrder(
+    createOrderDto: CreateOrderDto,
+  ): Promise<CreateOrderPresenter> {
     const { items } = createOrderDto;
     const productIds = createOrderDto.items.map((item) => item.productId);
     const products = await this.validateProducts(productIds);
-    const productsMap: Map<number, any> = new Map(
+    const productsMap: Map<number, ProductDto> = new Map(
       products.map((product) => [product.id, product]),
     );
     let totalItems = 0;
@@ -59,7 +69,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
       return acc + product.price * orderItem.quantity;
     }, 0);
 
-    return await this.order.create({
+    const newOrder = await this.order.create({
       data: {
         totalAmount,
         totalItems,
@@ -77,6 +87,7 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
         items: true,
       },
     });
+    return new CreateOrderPresenter(newOrder, productsMap);
   }
 
   async findAll(
@@ -162,6 +173,63 @@ export class OrdersService extends PrismaClient implements OnModuleInit {
     return await this.order.update({
       where: { id: changeOrderStatusDto.id },
       data: { status: changeOrderStatusDto.status },
+    });
+  }
+
+  private paymentSessionAdapter(
+    createOrderPresenter: CreateOrderPresenter,
+  ): PaymentSessionDto {
+    return {
+      orderId: createOrderPresenter.id,
+      currency: 'mxn',
+      items: createOrderPresenter.items.map((product) => ({
+        name: product.name,
+        price: product.price,
+        quantity: product.quantity,
+      })),
+    };
+  }
+
+  async createSession(createOrderPresenter: CreateOrderPresenter) {
+    try {
+      const paymentSessionDto: PaymentSessionDto =
+        this.paymentSessionAdapter(createOrderPresenter);
+      const validProducts = await firstValueFrom(
+        this.client.send({ cmd: 'create_payment_session' }, paymentSessionDto),
+      );
+      return validProducts;
+    } catch (error) {
+      throw new RpcException({
+        message: 'Error creating the session',
+        status: HttpStatus.CONFLICT,
+      });
+    }
+  }
+
+  async create(createOrderDto: CreateOrderDto) {
+    const newOrder = await this.createOrder(createOrderDto);
+    const paymentSession = await this.createSession(newOrder);
+    newOrder.setPaymentSession(paymentSession);
+    return newOrder;
+  }
+
+  async paymentSucceeded(paymentSuccessDto: PaymentSuccessDto) {
+    const { orderId, stripePaymentId, receiptUrl } = paymentSuccessDto;
+    const order = await this.findOne(orderId);
+
+    return await this.order.update({
+      where: { id: order.id },
+      data: {
+        paid: true,
+        paidAt: new Date(),
+        status: OrderStatus.PAID,
+        stripeChargeId: stripePaymentId,
+        OrderReceipt: {
+          create: {
+            receiptUrl,
+          },
+        },
+      },
     });
   }
 }
