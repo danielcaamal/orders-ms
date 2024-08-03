@@ -1,5 +1,5 @@
 # Dependencies
-FROM node:21-alpine3.19 as deps
+FROM node:21-alpine3.19 AS deps
 
 WORKDIR /usr/src/app
 
@@ -8,7 +8,7 @@ COPY package*.json ./
 RUN npm install
 
 # Builder
-FROM node:21-alpine3.19 as build
+FROM node:21-alpine3.19 AS build
 
 WORKDIR /usr/src/app
 
@@ -31,7 +31,7 @@ RUN npm run build
 RUN npm ci -f --only=production && npm cache clean --force
 
 # Creation
-FROM node:21-alpine3.19 as prod
+FROM node:21-alpine3.19 AS prod
 
 WORKDIR /usr/src/app
 
